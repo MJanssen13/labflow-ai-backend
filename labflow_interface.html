@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LabFlow-AI Interface (v3.0 - Design Moderno)</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        :root {
+            --cor-fundo-principal: #121212;
+            --cor-fundo-card: #1e1e1e;
+            --cor-texto-principal: #e0e0e0;
+            --cor-texto-secundario: #a0a0a0;
+            --cor-primaria: #007bff; /* Azul vibrante para botões */
+            --cor-destaque-suave: #2a2a2a;
+            --cor-highlight: #ffc107; /* Amarelo para destaque */
+            --cor-borda: #333;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--cor-fundo-principal);
+            color: var(--cor-texto-principal);
+            padding: 30px;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+        }
+
+        #app {
+            background-color: var(--cor-fundo-card);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            padding: 30px;
+            max-width: 700px;
+            width: 100%;
+        }
+
+        /* Títulos */
+        h2 {
+            font-weight: 600;
+            color: var(--cor-texto-principal);
+            margin-bottom: 25px;
+        }
+
+        /* --- CONTROLES E INPUTS --- */
+        .input-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        input[type="file"], .input-dropdown, button {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid var(--cor-borda);
+            background-color: var(--cor-destaque-suave);
+            color: var(--cor-texto-principal);
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        input[type="file"]::file-selector-button {
+             /* Estilo do botão interno do file input */
+            background-color: var(--cor-primaria);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-right: 15px;
+            cursor: pointer;
+        }
+
+        button {
+            background-color: var(--cor-primaria);
+            border: none;
+            font-weight: 500;
+        }
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Checkboxes */
+        .controles {
+            padding: 15px 0;
+            border-top: 1px solid var(--cor-borda);
+            border-bottom: 1px solid var(--cor-borda);
+            margin: 20px 0;
+        }
+        .controles label {
+            font-size: 14px;
+        }
+
+        /* --- RESULTADO --- */
+        .resultado-card {
+            background-color: var(--cor-destaque-suave);
+            padding: 20px;
+            border-radius: 8px;
+            min-height: 150px;
+            line-height: 1.8;
+            font-size: 13px;
+            font-family: Consolas, monospace;
+            overflow-x: auto;
+        }
+        
+        .resultado-texto {
+            white-space: pre-wrap; /* Mantém quebras de linha */
+        }
+
+        .resultado-texto span[contenteditable="true"] { 
+            background-color: #383838; /* Fundo mais escuro para editável */
+            border-bottom: 1px dashed var(--cor-texto-secundario);
+            color: var(--cor-texto-principal);
+            cursor: text;
+            padding: 1px 3px;
+            border-radius: 3px;
+            display: inline-block;
+            min-width: 10px;
+        }
+        .resultado-texto span[contenteditable="true"]:hover {
+            background-color: #4f4f4f; /* Mais claro no hover */
+        }
+        
+        .highlight-review { 
+            background-color: #3b3000 !important; /* Amarelo escuro */
+            color: #ffeb3b !important;
+            border-bottom: 1px dashed #ffeb3b !important;
+        }
+        
+        .copy-button-area {
+            text-align: right;
+            margin-top: 25px;
+        }
+
+        .linha-lote-info {
+            color: var(--cor-texto-secundario);
+            font-size: 11px;
+            margin-top: 10px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+        }
+        .linha-data {
+             margin-bottom: 5px; /* Espaço entre as datas */
+        }
+        .status-message {
+            color: var(--cor-texto-secundario);
+            font-size: 12px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app">
+        <h2>LabFlow-AI – Extração de Exames</h2>
+
+        <div class="input-group">
+            <input type="file" @change="handleFileUpload" accept=".pdf,image/*" multiple>
+            <button @click="processarArquivo" :disabled="!arquivoSelecionado || processando">
+                {{ processando ? 'Processando...' : 'Processar' }}
+            </button>
+        </div>
+        <p class="status-message" v-if="statusProcessamento">{{ statusProcessamento }}</p>
+        
+
+        <div class="controles">
+            <strong>Opções de Formatação:</strong><br>
+            <label>
+                <input type="checkbox" v-model="opcoes.usarSigla"> Usar Siglas
+            </label>
+            <label>
+                <input type="checkbox" v-model="opcoes.mostrarUnidade"> Mostrar Unidade
+            </label>
+            <label>
+                <input type="checkbox" v-model="opcoes.mostrarReferencia"> Mostrar Referência
+            </label>
+        </div>
+
+        <h3>Resultado Formatado:</h3>
+        <div class="resultado-card" ref="resultadoDiv" @input="handleInput">
+            <div class="resultado-texto">
+                <div v-for="(linhaHtml, index) in linhasFormatadasHtml" :key="index" v-html="linhaHtml"></div>
+                <div v-if="!examesBrutos.length && !statusProcessamento && !processando">
+                    Aguardando processamento do arquivo...
+                </div>
+                <div v-if="processando">
+                    Processando arquivo(s), por favor aguarde...
+                </div>
+            </div>
+        </div>
+
+        <div class="copy-button-area">
+            <button @click="copiarTexto" :disabled="linhasFormatadasHtml.length === 0">Copiar para Prontuário</button>
+            <p class="status-message" v-if="copiadoStatus">{{ copiadoStatus }}</p>
+        </div>
+
+    </div>
+
+    <script>
+        // --- [INÍCIO SCRIPT VUE v3.0 - Design Novo + Lógica de Lote] ---
+        const { createApp, ref, computed, watch } = Vue;
+
+        createApp({
+            setup() {
+                const arquivoSelecionado = ref(null); 
+                const statusProcessamento = ref('');
+                const processando = ref(false);
+                const examesBrutos = ref([]);
+                const opcoes = ref({
+                    usarSigla: false,
+                    mostrarUnidade: true,
+                    mostrarReferencia: true
+                });
+                const copiadoStatus = ref('');
+                const siglas = ref({
+                    'Hemoglobina': 'Hb', 'Hematócrito': 'Ht', 'Eritrócitos': 'Erit',
+                    'Leucócitos': 'Leuco', 'Plaquetas': 'PLT', 'Creatinina': 'Cr',
+                    'Ureia': 'Ur', 'Glicose': 'Gli', 'TSH ULTRA SENSIVEL': 'TSH',
+                    'Tá L - TIROXINA LIVRE': 'T4L', 'T3 - TRIIODOTIRONINA': 'T3',
+                    'ASPARTATO AMINO TRANSFERASE - TGO': 'TGO', 'ALANINA AMINO TRANSFERASE - TGP': 'TGP',
+                    'GAMA GLUTAMIL TRANSFERASE': 'GGT', 'VITAMINA D (25 HIDROXI)': 'Vit D',
+                    'VITAMINA B12': 'Vit B12', 'FERRITINA': 'Ferritina', 'ACIDO URICO': 'Ac Urico',
+                    'CÁLCIO': 'Ca', 'FÓSFORO': 'P', 'MAGNÉSIO': 'Mg', 'FOSFATASE ALCALINA': 'FA',
+                    'Bilirrubina Total': 'BT', 'Bilirrubina Direta': 'BD', 'Bilirrubina Indireta': 'BI',
+                    'ÍNDICE DE FIBROSE HEPÁTICA': 'Fibrose Hep', 'eTFG (Estimativa)': 'eTFG',
+                    'VCM': 'VCM', 'HCM': 'HCM', 'CHCM': 'CHCM', 'RDW': 'RDW', 'Bastonetes': 'Bast',
+                    'Segmentados': 'Seg', 'Eosinófilos': 'Eos', 'Basófilos': 'Baso', 'Linfócitos': 'Linfo',
+                    'Monócitos': 'Mono',
+                    'COLESTEROL TOTAL': 'CT', 'COLESTEROL HDL': 'HDL', 'COLESTEROL LDL': 'LDL',
+                    'TRIGLICERÍDEOS': 'TG', 'COLESTEROL NÃO HDL': 'Não HDL',
+                    // Adicionar siglas que faltam do JSON Gemini
+                     'Volume Corpuscular Médio': 'VCM', 'Hemoglobina Corpuscular Média': 'HCM', 
+                     'Concentração de Hemoglobina Corpuscular Média': 'CHCM', 
+                     'Amplitude de Distribuição dos Glóbulos Vermelhos': 'RDW',
+                     'Proteínas Totais': 'PT', 'Albumina': 'Alb', 'Alfa 1 Globulina': 'Alfa1',
+                     'Alfa 2 Globulina': 'Alfa2', 'Beta 1 Globulina': 'Beta1', 'Beta 2 Globulina': 'Beta2',
+                     'Gama Globulina': 'Gama', 'Relação Albumina/Globulina': 'A/G',
+                     'TIREOPEROXIDASE - ANTICORPOS ANTI': 'Anti-TPO',
+                     'ANTICORPOS ANTI TIREOGLOBULINA': 'Anti-Tg'
+                });
+                const resultadoDiv = ref(null);
+
+                // COMPUTED: Agrupa e Ordena (Acessa NomeCompleto e DataColeta)
+                const examesAgrupadosOrdenados = computed(() => {
+                    if (!examesBrutos.value || examesBrutos.value.length === 0) return {};
+                    
+                    const examesComIndice = examesBrutos.value.map((e, index) => ({...e, originalIndex: index}));
+
+                    const grupos = examesComIndice.reduce((acc, exame) => {
+                        const data = exame.DataColeta || 'Sem Data'; 
+                        if (!acc[data]) acc[data] = [];
+                        acc[data].push(exame);
+                        return acc;
+                    }, {});
+
+                    const datasOrdenadas = Object.keys(grupos).sort((a, b) => {
+                        if (a === 'Sem Data') return -1; if (b === 'Sem Data') return 1;
+                        try {
+                            const partesA = a.split('/'); const partesB = b.split('/');
+                            const dateA = new Date(partesA[2], partesA[1] - 1, partesA[0]);
+                            const dateB = new Date(partesB[2], partesB[1] - 1, partesB[0]);
+                            if (isNaN(dateA) || isNaN(dateB)) return 0;
+                            return dateA - dateB; 
+                        } catch (e) { return 0; }
+                    });
+
+                    const ordenado = {};
+                    for (const data of datasOrdenadas) ordenado[data] = grupos[data];
+                    return ordenado;
+                });
+
+                // COMPUTED: Gera as linhas de HTML formatado
+                const linhasFormatadasHtml = computed(() => {
+                    const linhas = [];
+                    const grupos = examesAgrupadosOrdenados.value;
+
+                    for (const data in grupos) {
+                        const dataFormatada = (data === 'Sem Data') ? 'Sem Data' : data;
+                        const examesDoDia = grupos[data];
+                        const partesExameHtml = [];
+                        
+                        // Adiciona Origem do Arquivo se existir e for diferente do anterior
+                        if (examesDoDia[0].OrigemArquivo && (linhas.length === 0 || !linhas[linhas.length-1].includes(examesDoDia[0].OrigemArquivo))) {
+                            linhas.push(`<div class="linha-lote-info">Arquivo: ${examesDoDia[0].OrigemArquivo}</div>`);
+                        }
+                        
+                        let linhaHtml = `<div class="linha-data">-(${dataFormatada}): `;
+
+                        for (const exame of examesDoDia) {
+                            let parteHtml = "";
+                            const nomeExameOriginal = exame.NomeCompleto || 'Desconhecido';
+                            const siglaDoJSON = exame.Sigla || nomeExameOriginal;
+                            const nomeExameDisplay = opcoes.value.usarSigla
+                                ? (siglas.value[nomeExameOriginal] || siglaDoJSON) // Usa sigla do JSON como fallback
+                                : nomeExameOriginal;
+
+                            let highlightClass = '';
+                            const res = exame.ResultadoObtido || '';
+                            const unit = exame.UnidadeMedida || '';
+                            if (res === 'Não informado' || res.toUpperCase() === 'NULL' || !/^\s*([<>≈≤≥]?\s*\d[\d,.]*|Inferior a|Superior a|Menor que)/i.test(res)) {
+                                 highlightClass = 'highlight-review';
+                            }
+                            if (res && res !== 'Não informado' && (String(unit).toUpperCase() === 'NULL' || !String(unit).trim())) {
+                                highlightClass = 'highlight-review';
+                            }
+
+                            const originalIndex = exame.originalIndex; 
+
+                            parteHtml += `<span class="${highlightClass}" contenteditable="true" data-idx="${originalIndex}" data-field="NomeCompleto" data-sigla="${exame.Sigla || ''}">${nomeExameDisplay}</span>`;
+
+                            if (exame.ResultadoObtido) {
+                                parteHtml += `: <span class="${highlightClass}" contenteditable="true" data-idx="${originalIndex}" data-field="ResultadoObtido">${exame.ResultadoObtido}</span>`;
+                            } else {
+                                parteHtml += ": [sem resultado]";
+                            }
+
+                            if (opcoes.value.mostrarUnidade && exame.UnidadeMedida && String(exame.UnidadeMedida).toUpperCase() !== 'NULL') {
+                                parteHtml += ` <span class="${highlightClass}" contenteditable="true" data-idx="${originalIndex}" data-field="UnidadeMedida">${exame.UnidadeMedida}</span>`;
+                            }
+                            
+                            if (opcoes.value.mostrarReferencia && exame.ValorReferencia) {
+                                const refLimpa = (exame.ValorReferencia || '').replace(/\s+/g, ' ').trim();
+                                parteHtml += ` (VR: <span contenteditable="true" data-idx="${originalIndex}" data-field="ValorReferencia">${refLimpa}</span>)`;
+                            }
+                            
+                            partesExameHtml.push(parteHtml);
+                        }
+                        linhaHtml += partesExameHtml.join(' / ');
+                        linhaHtml += `</div>`;
+                        linhas.push(linhaHtml);
+                    }
+                    return linhas;
+                });
+
+                // METHODS
+                function handleFileUpload(event) {
+                    const files = event.target.files; 
+                    if (files.length === 0) return;
+                    arquivoSelecionado.value = files; 
+                    statusProcessamento.value = `${files.length} arquivo(s) selecionado(s). Clique em Processar.`;
+                    examesBrutos.value = [];
+                    copiadoStatus.value = '';
+                    processando.value = false;
+                }
+
+                async function processarArquivo() {
+                    if (!arquivoSelecionado.value || processando.value) return;
+
+                    processando.value = true;
+                    statusProcessamento.value = `Enviando ${arquivoSelecionado.value.length} arquivo(s) para o backend...`;
+                    examesBrutos.value = [];
+
+                    const formData = new FormData();
+                    for (let i = 0; i < arquivoSelecionado.value.length; i++) {
+                        formData.append("files", arquivoSelecionado.value[i]); 
+                    }
+
+                    try {
+                        // --- URL DO FETCH (MANTER LOCALHOST POR ENQUANTO) ---
+                        const response = await fetch('http://localhost:8000/api/processar-laudo', { 
+                            method: 'POST',
+                            body: formData,
+                        });
+
+                        console.log("Resposta recebida do backend. Status:", response.status);
+
+                        if (!response.ok) {
+                            let errorDetail = "Erro desconhecido do servidor.";
+                            try {
+                                const errorData = await response.json();
+                                errorDetail = errorData.detail || JSON.stringify(errorData);
+                                console.error("Detalhe do erro do backend:", errorData);
+                            } catch (e) {
+                                errorDetail = `Status: ${response.status} ${response.statusText}`;
+                                console.error("Não foi possível ler corpo do erro:", e);
+                            }
+                            throw new Error(`Erro do servidor: ${errorDetail}`);
+                        }
+
+                        const jsonData = await response.json();
+                        console.log("Dados recebidos do backend (lote):", jsonData);
+                        examesBrutos.value = jsonData;
+                        statusProcessamento.value = `Processamento concluído! ${jsonData.length} exames encontrados.`;
+
+                    } catch (error) {
+                        console.error("Erro ao processar arquivo:", error);
+                        statusProcessamento.value = `Erro ao conectar/processar: ${error.message}`;
+                        examesBrutos.value = [];
+                    } finally {
+                         processando.value = false;
+                         setTimeout(() => { statusProcessamento.value = ''; }, 6000);
+                    }
+                }
+
+                // Cópia de Texto Puro (Remove tags de edição)
+                function copiarTexto() {
+                    const divResultado = resultadoDiv.value; // Acessa o elemento ref
+                    if (!divResultado) return;
+                    
+                    const linhasDeTextoPuro = [];
+                    const linhasDivs = divResultado.querySelectorAll('.linha-data'); // Seleciona apenas as linhas de dados
+
+                    linhasDivs.forEach(linhaDiv => {
+                        // Extrai o texto interno da div, que já foi formatado pelo Vue
+                        // O innerText ignora as tags HTML internas dos spans
+                        const textoPuroDaLinha = linhaDiv.innerText.replace(/[\r\n]+/g, ' ').trim();
+                        linhasDeTextoPuro.push(textoPuroDaLinha);
+                    });
+
+                    const textoParaCopiar = linhasDeTextoPuro.join('\n'); // Junta com quebra de linha real
+
+                    navigator.clipboard.writeText(textoParaCopiar).then(() => {
+                        copiadoStatus.value = 'Texto copiado para a área de transferência!';
+                        setTimeout(() => { copiadoStatus.value = ''; }, 3000);
+                    }).catch(err => {
+                        copiadoStatus.value = 'Erro ao copiar texto.';
+                        console.error("Erro ao copiar:", err);
+                    });
+                }
+
+                // Lógica de manipulação de input para salvar edições
+                 function handleInput(event) {
+                    if (event.inputType === 'insertParagraph') {
+                         event.target.textContent = event.target.textContent.replace(/[\r\n]+/g, '');
+                         event.preventDefault(); return;
+                    }
+                    const target = event.target;
+                    if (target.tagName === 'SPAN' && target.isContentEditable && target.dataset.idx && target.dataset.field) {
+                        const index = parseInt(target.dataset.idx);
+                        const field = target.dataset.field; // NomeCompleto, ResultadoObtido, etc.
+                        let newValue = target.textContent.replace(/\s+/g, ' ').trim();
+
+                        if (index >= 0 && index < examesBrutos.value.length) {
+                             const originalExame = examesBrutos.value[index];
+                             
+                             // Se editou o nome exibido (que pode ser sigla), atualiza NomeCompleto
+                             if (field === 'NomeCompleto' && opcoes.value.usarSigla) {
+                                  // Tenta achar a sigla no dicionário para obter nome original
+                                  const nomeOriginalEncontrado = Object.keys(siglas.value).find(key => siglas.value[key] === newValue);
+                                  originalExame['NomeCompleto'] = nomeOriginalEncontrado || newValue; // Usa nome original ou o novo texto
+                                  // Atualiza a sigla no JSON também se não achou
+                                  if (!nomeOriginalEncontrado) originalExame['Sigla'] = newValue;
+                             } else {
+                                  // Atualiza o campo correspondente no JSON
+                                  originalExame[field] = newValue; 
+                             }
+                             
+                             // Força re-renderização
+                             examesBrutos.value = [...examesBrutos.value];
+                        }
+                    }
+                }
+
+                // Retorna tudo para o template
+                return {
+                    arquivoSelecionado, statusProcessamento, processando,
+                    examesBrutos, opcoes, copiadoStatus, resultadoDiv,
+                    examesAgrupadosOrdenados, linhasFormatadasHtml,
+                    handleFileUpload, processarArquivo, copiarTexto, handleInput
+                }
+            }
+        }).mount('#app');
+        // --- [FIM SCRIPT VUE v3.0] ---
+    </script>
+
+</body>
+</html>
