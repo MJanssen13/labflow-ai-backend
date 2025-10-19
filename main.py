@@ -1,4 +1,4 @@
-# --- [INÍCIO main.py - Backend FastAPI v2.6 (OCR + Gemini)] ---
+# --- [INÍCIO main.py - Backend FastAPI v2.7 (Deploy com Correção de CORS)] ---
 
 import io
 import re
@@ -13,19 +13,11 @@ try:
     from fastapi import FastAPI, UploadFile, File, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     from google import genai
-    from PyPDF2 import PdfReader # Para extração direta
+    from PyPDF2 import PdfReader # Única dependência de PDF agora
     import asyncio 
-
-    # Bibliotecas OCR (Fallback)
-    import cv2
-    import pytesseract
-    import numpy as np
-    from pdf2image import convert_from_bytes, pdfinfo_from_bytes # Para PDF-imagem
-    from PIL import Image # Para Imagem
-
 except ImportError as e:
-    print(f"ERRO CRÍTICO: Biblioteca faltando! {e}")
-    print("Verifique se o requirements.txt está correto e foi instalado.")
+    print(f"ERRO: Biblioteca faltando! {e}")
+    print("Verifique se o requirements.txt está correto.")
     exit()
 
 # --- 1. CONFIGURAÇÃO DA CHAVE GEMINI (Via Variável de Ambiente) ---
@@ -34,126 +26,52 @@ try:
     if not API_KEY:
          raise ValueError("Chave da API Gemini (GEMINI_API_KEY) não encontrada nas variáveis de ambiente.")
     
+    # Inicializa o cliente com a chave encontrada
     CLIENT = genai.Client(api_key=API_KEY)
     print("INFO: Cliente Gemini inicializado com sucesso.")
-
 except Exception as e:
     print(f"\nFATAL: Erro de inicialização do Cliente Gemini: {e}")
     raise
 
 # --- 2. Configuração do FastAPI ---
-app = FastAPI(title="LabFlow-AI Backend v2.6 (OCR + Gemini)")
+app = FastAPI(title="LabFlow-AI Backend v2.7 (Deploy Simplificado)")
 
-# --- Configuração do CORS (Deixe o espaço para a URL do Cloud Run) ---
+# --- Configuração do CORS (COM A CORREÇÃO DA ETAPA D.2) ---
 origins = [
     "http://localhost",
     "http://127.0.0.1",
     "null",
-    "https://storage.googleapis.com", # Adicionaremos isso depois
+    "https://storage.googleapis.com"  # <--- CORREÇÃO DE CORS ADICIONADA AQUI
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- 3. Funções de Extração de Texto (OCR e Direta) ---
-
-# Função de pré-processamento de imagem (para OCR)
-def preparar_imagem_para_leitura(imagem: np.ndarray) -> np.ndarray:
-    try:
-        if len(imagem.shape) == 3:
-             if imagem.shape[2] == 4: imagem = cv2.cvtColor(imagem, cv2.COLOR_RGBA2BGR)
-             cinza = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
-        elif len(imagem.shape) == 2: cinza = imagem
-        else: raise ValueError("Formato de imagem não suportado")
-        _, binaria = cv2.threshold(cinza, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-        processada = cv2.medianBlur(binaria, 3)
-        return processada
-    except Exception as e:
-        print(f"WARN: Erro no pré-processamento OpenCV: {e}. Usando imagem original.")
-        try: return cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY) if len(imagem.shape)==3 else imagem
-        except: return imagem
-
-# Função de OCR (Tesseract)
-def extrair_texto_com_ocr(conteudo_bytes: bytes) -> str:
-    texto_final_ocr = ""
-    print("INFO: Iniciando extração via OCR...")
-    try:
-        # Tenta converter PDF para imagens (o Poppler deve estar instalado no Dockerfile)
-        paginas_pdf = convert_from_bytes(conteudo_bytes, dpi=300) 
-        print(f"INFO: (OCR) PDF convertido em {len(paginas_pdf)} página(s).")
-        for i, pagina in enumerate(paginas_pdf):
-            try:
-                imagem_cv = cv2.cvtColor(np.array(pagina), cv2.COLOR_RGB2BGR)
-                imagem_limpa = preparar_imagem_para_leitura(imagem_cv)
-                texto_pagina = pytesseract.image_to_string(imagem_limpa, lang='por', config='--psm 6')
-                texto_final_ocr += texto_pagina + f"\n--- OCR P{i+1} ---\n"
-            except Exception as e_page_ocr:
-                print(f"WARN: Erro no OCR da página {i+1}: {e_page_ocr}")
-                continue 
-    except Exception as e_pdf_to_img:
-        # Se falhar como PDF, tenta como imagem única
-        print(f"INFO: (OCR) Falha ao converter PDF ({e_pdf_to_img}), tentando como imagem...")
-        try:
-            imagem_pil = Image.open(io.BytesIO(conteudo_bytes))
-            if imagem_pil.mode == 'RGBA': imagem_cv = cv2.cvtColor(np.array(imagem_pil), cv2.COLOR_RGBA2BGR)
-            elif imagem_pil.mode == 'P': imagem_pil_rgb = imagem_pil.convert('RGB'); imagem_cv = cv2.cvtColor(np.array(imagem_pil_rgb), cv2.COLOR_RGB2BGR)
-            elif imagem_pil.mode == 'L': imagem_cv = cv2.cvtColor(np.array(imagem_pil), cv2.COLOR_GRAY2BGR)
-            else: imagem_cv = cv2.cvtColor(np.array(imagem_pil), cv2.COLOR_RGB2BGR)
-            
-            imagem_limpa = preparar_imagem_para_leitura(imagem_cv)
-            texto_final_ocr = pytesseract.image_to_string(imagem_limpa, lang='por', config='--psm 6')
-        except Exception as e_img_ocr:
-            print(f"ERRO: Falha no OCR como PDF e como Imagem: {e_img_ocr}")
-            return "" 
-    print(f"INFO: OCR concluído. Caracteres extraídos: {len(texto_final_ocr)}")
-    return texto_final_ocr
-
-# Função de Extração Direta (PyPDF2)
-def extrair_texto_direto_pdf(conteudo_bytes: bytes) -> Optional[str]:
+# --- 3. Funções de Extração de Texto (Apenas PyPDF2) ---
+def extrair_texto_direto_pdf(conteudo_bytes: bytes) -> str:
      texto_pdf = ""
      try:
           pdf = PdfReader(io.BytesIO(conteudo_bytes))
           print(f"INFO: (Texto Direto) PDF com {len(pdf.pages)} páginas.")
-          for i, page in enumerate(pdf.pages):
-               try: texto_pagina = page.extract_text(); texto_pdf += (texto_pagina or "") + f"\n--- Txt P{i+1} ---\n"
-               except Exception as e_page: print(f"WARN: Erro ao extrair texto da pág {i+1}: {e_page}")
-          success = texto_pdf and len(texto_pdf.strip()) > 100 * len(pdf.pages)
-          print(f"INFO: (Texto Direto) Extração: {len(texto_pdf)} chars. Sucesso: {success}")
-          return texto_pdf if success else None
-     except Exception as e_pdf: print(f"WARN: Erro PyPDF2: {e_pdf}"); return None
+          for page in pdf.pages:
+               texto_pagina = page.extract_text()
+               if texto_pagina: 
+                  texto_pdf += texto_pagina + "\n---\n"
+          print(f"INFO: (Texto Direto) Extração: {len(texto_pdf)} chars.")
+          return texto_pdf if texto_pdf and len(texto_pdf.strip()) > 50 else ""
+     except Exception as e:
+          print(f"WARN: Erro PyPDF2: {e}")
+          return ""
 
-# Função Inteligente (Decide entre Direta e OCR)
-def extrair_texto_inteligente(conteudo_bytes: bytes, nome_arquivo: str) -> str:
-    texto_final = ""
-    content_type = nome_arquivo.split('.')[-1].lower() if '.' in nome_arquivo else ''
-
-    if content_type == 'pdf':
-        print("INFO: PDF detectado. Tentando extração direta...")
-        texto_direto = extrair_texto_direto_pdf(conteudo_bytes)
-        if texto_direto:
-            print("INFO: Extração direta bem-sucedida.")
-            texto_final = texto_direto
-        else:
-            print("INFO: Falha na extração direta ou pouco texto. Usando OCR como fallback...")
-            texto_final = extrair_texto_com_ocr(conteudo_bytes)
-    elif content_type in ['jpg', 'jpeg', 'png', 'bmp', 'tiff']:
-        print("INFO: Arquivo de imagem detectado. Usando OCR...")
-        texto_final = extrair_texto_com_ocr(conteudo_bytes)
-    else:
-        print(f"WARN: Tipo de arquivo não suportado ({content_type}). Tentando OCR...")
-        texto_final = extrair_texto_com_ocr(conteudo_bytes)
-
-    return texto_final
-
-
-# --- 4. Função Principal: Estruturação com API Gemini (v2.5 - Final) ---
+# --- 4. Função Principal: Motor Gemini (v2.5 - Mantida) ---
 def organizar_dados_com_api_gemini_final(texto_bruto_extraido: str) -> List[Dict[str, Any]]:
     
     if not texto_bruto_extraido or len(texto_bruto_extraido.strip()) < 50:
         print("WARN: Texto bruto extraído parece vazio ou muito curto. Pulando chamada Gemini.")
         return []
 
+    # Definição do Esquema (JSON Schema)
     json_schema = {
         "type": "array",
         "description": "Lista de exames laboratoriais extraídos.",
@@ -202,7 +120,7 @@ def organizar_dados_com_api_gemini_final(texto_bruto_extraido: str) -> List[Dict
         print(f"ERRO CRÍTICO NA API GEMINI (Processo): {e}")
         raise
 
-# --- 5. Endpoint da API FastAPI (Lote - Final) ---
+# --- 5. Endpoint da API FastAPI (Lote - Simplificado) ---
 @app.post("/api/processar-laudo", response_model=List[Dict[str, Any]])
 async def processar_laudo_endpoint(files: List[UploadFile] = File(...)): 
     
@@ -212,20 +130,18 @@ async def processar_laudo_endpoint(files: List[UploadFile] = File(...)):
 
     for file in files:
         print(f"\n--- Processando Arquivo: {file.filename} ---")
-        
-        # Aceita PDF e Imagens (Jpeg, Png)
-        content_type = file.content_type
-        if content_type not in ["application/pdf", "image/jpeg", "image/png"]:
-             print(f"WARN: Arquivo {file.filename} ({content_type}) ignorado. Apenas PDF/JPG/PNG é suportado.")
+        # Aceita apenas PDF agora, pois o OCR foi removido
+        if file.content_type != 'application/pdf':
+             print(f"WARN: Arquivo {file.filename} ({file.content_type}) ignorado. Apenas PDF é suportado.")
              continue
 
         try: 
             conteudo_bytes = await file.read()
             
-            # ETAPA 1: Extrair Texto (Inteligente: Direto ou OCR)
-            texto_bruto = extrair_texto_inteligente(conteudo_bytes, file.filename or "default.pdf") # Passa o nome do arquivo
+            # ETAPA 1: Extrair Texto (Apenas PyPDF2)
+            texto_bruto = extrair_texto_direto_pdf(conteudo_bytes)
             if not texto_bruto:
-                print(f"WARN: Falha ao extrair texto de {file.filename}. Pulando.")
+                print(f"WARN: Falha ao extrair texto de {file.filename} (não selecionável?). Pulando.")
                 continue
 
             # ETAPA 2: Estruturar com Gemini
@@ -234,7 +150,6 @@ async def processar_laudo_endpoint(files: List[UploadFile] = File(...)):
             # ETAPA 3: Adicionar origem e combinar
             for exame in dados_do_arquivo:
                  exame['OrigemArquivo'] = file.filename
-            
             resultados_combinados.extend(dados_do_arquivo)
             print(f"INFO: SUCESSO - {len(dados_do_arquivo)} exames extraídos de {file.filename}")
 
@@ -247,4 +162,4 @@ async def processar_laudo_endpoint(files: List[UploadFile] = File(...)):
     print(f"\nINFO: Lote Concluído. Total de exames: {len(resultados_combinados)}. Tempo: {end_time - start_time:.2f} seg")
     return resultados_combinados
 
-# --- [FIM main.py - Backend FastAPI v2.6 (OCR + Gemini)] ---
+# --- [FIM main.py - Backend FastAPI v2.7 com Correção de CORS] ---
