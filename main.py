@@ -40,7 +40,7 @@ origins = [
     "http://localhost",
     "http://127.0.0.1",
     "null",
-    # "https://labflow-ai-backend.onrender.com", # Adicionaremos isso depois
+     "https://labflow-ai.onrender.com", # Adicionaremos isso depois
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -161,4 +161,5 @@ async def processar_laudo_endpoint(files: List[UploadFile] = File(...)):
     return resultados_combinados
 
 # --- [FIM main.py - Backend FastAPI v2.7 (Deploy Simplificado)] ---
+
 
