@@ -49,7 +49,7 @@ origins = [
     "http://localhost",
     "http://127.0.0.1",
     "null",
-    # "https://seu-frontend-url.run.app", # Adicionaremos isso depois
+    "https://storage.googleapis.com/labflow-ai/index.html", # Adicionaremos isso depois
 ]
 app.add_middleware(
     CORSMiddleware,
