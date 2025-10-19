@@ -364,7 +364,7 @@
 
                     try {
                         // --- URL DO FETCH (MANTER LOCALHOST POR ENQUANTO) ---
-                        const response = await fetch('http://localhost:8000/api/processar-laudo', { 
+                        const response = await fetch('https://labflow-ai-backend.onrender.com', { 
                             method: 'POST',
                             body: formData,
                         });
@@ -471,4 +471,5 @@
     </script>
 
 </body>
+
 </html>
