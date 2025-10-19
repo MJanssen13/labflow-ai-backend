@@ -1,5 +1,17 @@
+# --- requirements.txt (Versão Completa com OCR) ---
+
+# Servidor Web
 fastapi
 uvicorn[standard]
+python-multipart
+
+# API Gemini e Extração
 google-genai
 PyPDF2
-python-multipart
+
+# Dependências de OCR (Python)
+pdf2image
+pytesseract
+opencv-python-headless
+numpy
+Pillow
